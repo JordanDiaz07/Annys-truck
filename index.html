@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Anny · Caja y cuentas</title>
+  <meta name="description" content="Control de ventas, gastos y salarios del kiosco Anny.">
+  <meta name="theme-color" content="#4B2A1E">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Arvo:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="sign"><span>ANNY</span></div>
+    <div class="top-sub">Caja y cuentas</div>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <nav class="tabs" aria-label="Secciones">
+    <button data-tab="inicio" class="active"><span class="ic">🏠</span>Inicio</button>
+    <button data-tab="gastos"><span class="ic">🧾</span>Gastos</button>
+    <button data-tab="vamos"><span class="ic">📊</span>Cómo vamos</button>
+    <button data-tab="mas"><span class="ic">☰</span>Más</button>
+  </nav>
+
+  <div id="toast" role="status"></div>
+  <input type="file" id="file-restore" accept=".json,.txt,application/json,text/plain" hidden>
+
+  <script src="core.js"></script>
+  <script src="informe.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
