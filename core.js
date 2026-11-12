@@ -348,10 +348,11 @@ function csv(rows) {
 
 async function exportarExcel() {
   const pers = S().personas;
-  const rows = [['Fecha', 'Día', 'Efectivo en caja', 'Yappy', 'Venta efectivo', 'Venta total', 'Inversión', 'Apartado fijos', 'Gastos del día', 'Salarios', ...pers.map(p => p.nombre), 'Nota', 'Cargado como historia']];
+  const rows = [['Fecha', 'Día', 'Efectivo en caja', 'Yappy', 'Venta efectivo', 'Venta total', 'Inversión', 'Apartado fijos', 'Gastos del día', 'Salarios', ...pers.map(p => p.nombre), 'Nota', 'Cargado como historia', 'Mercancía llevada', 'Mercancía que volvió', 'Se acabó antes de cerrar', 'Llovió', 'Feria o evento']];
   for (const f of fechasCerradas()) {
     const c = calc(f), d = db.dias[f];
-    rows.push([f, DOW_LARGO[parse(f).getDay()], d.efectivo, c.yappy, c.efectivo, c.venta, c.inversion, c.apFijos, c.gastosDia, c.salarios, ...pers.map((p, i) => c.personas[i] ? c.personas[i].monto : 0), d.nota || '', d.hist ? 'Sí' : '']);
+    rows.push([f, DOW_LARGO[parse(f).getDay()], d.efectivo, c.yappy, c.efectivo, c.venta, c.inversion, c.apFijos, c.gastosDia, c.salarios, ...pers.map((p, i) => c.personas[i] ? c.personas[i].monto : 0), d.nota || '', d.hist ? 'Sí' : '',
+      ...(d.merc ? [d.merc.llevada, d.merc.volvio, d.merc.agoto ? 'Sí' : 'No', d.merc.lluvia ? 'Sí' : 'No', d.merc.evento ? 'Sí' : 'No'] : ['', '', '', '', ''])]);
   }
   rows.push([]);
   rows.push(['GASTOS']);
@@ -388,6 +389,7 @@ function guardarDiaHist(f, ventaEf, yappy, taxiMonto, nota) {
     p,
     hist: prev ? !!prev.hist : true,
     guardado: new Date().toISOString(),
+    ...(prev && prev.merc ? { merc: prev.merc } : {}),   // corregir las ventas no debe borrar la mercancía anotada
   };
   db.gastos = db.gastos.filter(g => !(g.fecha === f && g.cat === 'taxi'));
   if (taxiMonto > 0) db.gastos.push({ id: uid(), fecha: f, cat: 'taxi', concepto: 'Taxi', monto: r2(taxiMonto), deCaja: false });

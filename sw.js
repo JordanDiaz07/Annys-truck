@@ -1,9 +1,11 @@
 /* Guarda la app en el teléfono para que funcione sin internet. */
-const CACHE = 'anny-v5';
-const SHELL = ['./', 'index.html', 'styles.css', 'core.js', 'informe.js', 'app.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'anny-v6';
+const SHELL = ['./', 'index.html', 'styles.css', 'core.js', 'merc.js', 'informe.js', 'app.js', 'vendor/jspdf.umd.min.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  /* cache: 'reload' = bajar siempre la copia nueva del sitio. Sin esto, el navegador podría guardar
+     archivos viejos (los guarda hasta 10 minutos) bajo el nombre de la versión nueva. */
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

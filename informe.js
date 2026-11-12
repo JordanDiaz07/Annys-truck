@@ -289,6 +289,72 @@ async function crearInformePDF(ym) {
     parrafo('No se anotaron gastos en este mes.', 10, C.muted);
   }
 
+  /* ---------- Mercancía: lo que llevaron, lo que volvió y lo que se vendió ---------- */
+  const mm = informeMerc(ym);
+  if (mm) {
+    const signo = n => `${n > 0 ? '+' : ''}${money(n)}`;
+    seccion('Mercancía: lo que llevaron y lo que volvió', 150);
+    parrafo(`En ${plural(mm.dias, 'día')} de ${mesNombre(ym)} anotaron la mercancía: llevaron ${money(mm.llevada)} (lo que costó) y volvieron a casa ${money(mm.volvio)}, ` +
+      `el ${mm.pctSobra}% (${money(mm.volvioDia)} por día). Es plata que se gastó en mercancía y no entró, aunque después se aproveche en la casa.`, 10);
+    const bw4 = (CW - 30) / 4, bh4 = 66;
+    espacio(bh4 + 10);
+    caja('Llevaron', money(mm.llevada), `${plural(mm.dias, 'día')} anotados`, M, bw4, bh4);
+    caja('Volvió a casa', money(mm.volvio), `${mm.pctSobra}% de lo llevado · ${money(mm.volvioDia)} por día`, M + (bw4 + 10), bw4, bh4,
+      mm.volvio > 0 ? { bg: C.amberBg, v: C.amber } : { bg: C.greenBg, v: C.green });
+    caja('Se usó', money(mm.usada), `${mm.pctUsadaVenta}% de lo vendido en esos días (${money(mm.venta)})`, M + 2 * (bw4 + 10), bw4, bh4);
+    if (mm.anterior) {
+      caja(`Frente a ${d.mesAnterior}`, `${mm.anterior.pctSobra}% a ${mm.pctSobra}%`,
+        `${mm.difPuntos > 0 ? 'Sobró más' : mm.difPuntos < 0 ? 'Sobró menos' : 'Sobró igual'}: ${signo(mm.difVolvioDia)} por día`, M + 3 * (bw4 + 10), bw4, bh4,
+        mm.difPuntos > 0 ? { bg: C.redBg, v: C.red } : { bg: C.greenBg, v: C.green });
+    } else {
+      caja(`Frente a ${d.mesAnterior}`, 'Sin datos', 'El mes anterior no tiene mercancía anotada', M + 3 * (bw4 + 10), bw4, bh4);
+    }
+    y += bh4 + 22;
+
+    // Gráfica: lo que volvió cada día (los mismos días de la gráfica de ventas, para compararlas)
+    const gh2 = 70, gx2 = M + 34, gw2 = CW - 34;
+    espacio(gh2 + 60);   // el título y su gráfica siempre en la misma página
+    font(10, 'bold', C.brown); txt('Lo que volvió a casa cada día', M, y); y += 12;
+    const mx2 = Math.max(...mm.diario.map(x => x.volvio), 1), nice2 = Math.ceil(mx2 / 10) * 10;
+    const yv2 = v => y + gh2 * (1 - v / nice2);
+    doc.setLineWidth(.5); doc.setDrawColor(C.line);
+    for (let k = 0; k <= 2; k++) {
+      const val = nice2 * k / 2;
+      doc.line(gx2, yv2(val), gx2 + gw2, yv2(val));
+      font(8, 'normal', C.muted); txt(`$${Math.round(val)}`, gx2 - 5, yv2(val) + 3, { align: 'right' });
+    }
+    const bwid2 = gw2 / mm.diario.length, paso2 = Math.ceil(mm.diario.length / 16);
+    mm.diario.forEach((x, i) => {
+      const bx = gx2 + i * bwid2 + bwid2 * 0.15, bwd = bwid2 * 0.7;
+      fill('#D9A441'); doc.rect(bx, yv2(x.volvio), bwd, y + gh2 - yv2(x.volvio), 'F');
+      if (i % paso2 === 0) { font(7.5, 'normal', C.muted); txt(String(parse(x.fecha).getDate()), bx + bwd / 2, y + gh2 + 11, { align: 'center' }); }
+    });
+    y += gh2 + 38;
+
+    // Tabla por día de la semana: lo vendido contra lo llevado y lo que volvió
+    espacio(120);   // el título y al menos unas filas en la misma página
+    font(10, 'bold', C.brown); txt('Cada día de la semana: lo vendido contra la mercancía', M, y); y += 20;
+    tabla([{ t: 'Día', w: 86 }, { t: 'Días', w: 44, a: 'r' }, { t: 'Vendieron/día', w: 82, a: 'r' }, { t: 'Llevaron/día', w: 78, a: 'r' }, { t: 'Volvió/día', w: 74, a: 'r' }, { t: '% sobra', w: 56, a: 'r' }, { t: 'Cuánto llevar', w: CW - 420, a: 'r' }],
+      mm.porDia.map(p => {
+        const s = sugerenciaDia(p.dow);
+        return [DOW_LARGO[p.dow].replace(/^./, c => c.toUpperCase()), String(p.n), money(p.ventaProm), money(p.llevaProm), money(p.volvioProm), `${p.pctSobra}%`,
+          s.listo ? { t: `Llevar ${money(s.monto)}`, bold: true, color: C.green } : { t: `Faltan ${plural(s.faltan, 'día')}`, color: C.amber }];
+      }));
+    if (mm.porDia.length > 1) {
+      const may = mm.porDia.reduce((a, b) => b.pctSobra > a.pctSobra ? b : a), men = mm.porDia.reduce((a, b) => b.pctSobra < a.pctSobra ? b : a);
+      parrafo(`El día que más sobra es el ${DOW_LARGO[may.dow]} (${may.pctSobra}%, ${money(may.volvioProm)} al día) y el que menos, el ${DOW_LARGO[men.dow]} (${men.pctSobra}%, ${money(men.volvioProm)} al día).`, 10);
+    }
+    const bi = balanceInversion(), rd = rendimientoMerc();
+    if (bi.listo) {
+      parrafo(`Lo que apartan para compras: gastan el ${bi.pctReal}% de lo vendido (mercancía ${money(bi.usadaDia)} + gas ${money(bi.gasDia)} al día) y apartan el ${bi.pctApartado}%. ` +
+        (bi.difDia >= 0 ? `Les sobra ${money(bi.difDia)} al día (unos ${money(bi.difMes)} al mes).` : `Les falta ${money(-bi.difDia)} al día (unos ${money(-bi.difMes)} al mes).`) +
+        (bi.sinGas ? ' El gas todavía no está contado.' : ''), 10);
+    }
+    if (rd) parrafo(`Por cada $1 de mercancía que usan, venden ${money(rd.porDolar)}.`, 10);
+    parrafo('Cuando hay 3 días anotados de un mismo día de la semana, la app sugiere cuánto llevar: lo que realmente se usó más un colchón del 10% (20% si ese día se acaba seguido). ' +
+      'Mientras más días anoten, más se afinan las sugerencias.', 9, C.muted);
+  }
+
   if (d.gas.compras) {
     seccion('Gas', 70);
     const g = d.gas;

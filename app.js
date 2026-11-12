@@ -17,7 +17,9 @@ const state = {
   wiz: null,
   gasto: null,
   installEvt: null,
+  hayNueva: false,     // ya se bajó una versión nueva de la app y falta recargar
 };
+let pasoMercEnfocado = null;   // en qué paso del cierre ya se enfocó el campo de mercancía
 
 function irA(view, { push = true } = {}) {
   if (push && view !== state.view) {
@@ -106,6 +108,7 @@ function aviso(tipo, ic, texto, btn = '') {
 function avisosInicio() {
   const out = [];
   const t = hoy();
+  if (state.hayNueva) out.push(aviso('info', '🔄', '<b>Hay una versión nueva de la app.</b> Toquen Actualizar para usarla.', `<button class="btn sm" data-act="recargar">Actualizar</button>`));
   // ¿Se les olvidó cerrar el último día de trabajo?
   if (fechasCerradas().some(f => !db.dias[f].hist)) {
     let d = addDays(t, -1), k = 0;
@@ -149,6 +152,8 @@ function vInicio() {
       <button class="btn primary xl" data-cerrar="${t}">💵 Cerrar el día</button></div>`;
   }
 
+  html += tarjetaMerc();
+
   const av = avisosInicio();
   if (av.length) html += `<div class="avisos">${av.slice(0, 3).join('')}</div>`;
 
@@ -190,6 +195,8 @@ function vGuia(primeraVez) {
 function iniciarCierre(f) {
   const dia = db.dias[f];
   const gs = gastosDe(f);
+  const m = camposMercDelDia(f);
+  pasoMercEnfocado = null;
   const taxi = gs.find(g => g.cat === 'taxi');
   const salidas = gs.filter(g => g.deCaja && g.cat !== 'taxi').map(g => ({ ...g }));
   state.wiz = {
@@ -202,10 +209,12 @@ function iniciarCierre(f) {
     salidas, origIds: salidas.map(g => g.id),
     nota: dia ? dia.nota || '' : '',
     otra: false, otraCat: 'gas',
+    mLlevada: m.llevada, mVolvio: m.volvio, mAgoto: m.agoto, mLluvia: m.lluvia, mEvento: m.evento, mError: null,
   };
   irA('cierre');
 }
 const wizConDatos = () => state.wiz && (state.wiz.efectivo !== '' || state.wiz.yappy !== '') && !state.wiz.edit;
+const mercDelWiz = w => ({ llevada: w.mLlevada, volvio: w.mVolvio, agoto: w.mAgoto, lluvia: w.mLluvia, evento: w.mEvento });
 
 function calcWiz() {
   const w = state.wiz;
@@ -220,7 +229,7 @@ function calcWiz() {
 function vCierre() {
   const w = state.wiz;
   if (!w) { state.view = 'inicio'; return vInicio(); }
-  const total = 4;
+  const total = 5;
   const top = `<div class="wiz-top">
       <button class="back" data-act="volver" aria-label="Atrás">‹</button>
       <div class="grow"><div class="wiz-paso">Paso ${w.step} de ${total}</div><div class="bar"><i style="width:${100 * w.step / total}%"></i></div></div>
@@ -255,7 +264,24 @@ function vCierre() {
           ${w.otraCat === 'otro' ? '<input id="w-otra-que" class="input" placeholder="¿Qué fue? Ej.: bolsas">' : ''}
           <div class="row mt"><div class="money-in grow"><input id="w-otra-monto" class="input" inputmode="decimal" placeholder="¿Cuánto?"></div><button class="btn" data-act="add-salida">Agregar</button></div>
         </div>` : `<button class="btn block mt" data-act="otra-salida">＋ Se pagó otra cosa</button>`}
-      <button class="btn primary xl mt" data-act="wiz-sig">Ver resultado →</button>`;
+      <button class="btn primary xl mt" data-act="wiz-sig">Siguiente →</button>`;
+  } else if (w.step === 4) {
+    const err = campo => w.mError && w.mError.campo === campo ? `<p class="campo-error" role="alert">${esc(w.mError.error)}</p>` : '';
+    const teniaMerc = !!(db.dias[w.f] && db.dias[w.f].merc);
+    const marca = (k, on, ic, txt) => `<button class="toggle ${on ? 'on' : ''}" data-merc="${k}" aria-pressed="${on}"><span class="chk">${on ? '✓' : ''}</span><span class="grow">${ic} ${txt}</span></button>`;
+    body = `<div class="q"><div class="q-ic">🛒</div><h1>¿Cuánta mercancía llevaron hoy?</h1>
+      <p>Escriban lo que <b>costó</b> la mercancía, no lo que la venden. Así la app aprende qué días conviene llevar más o menos.</p></div>
+      <label class="field">Lo que llevaron hoy<div class="money-in"><input id="w-mll" class="input" inputmode="decimal" placeholder="0.00" value="${esc(w.mLlevada)}" autocomplete="off"></div></label>
+      ${err('llevada')}
+      <label class="field">Lo que volvió a casa<div class="money-in"><input id="w-mvo" class="input" inputmode="decimal" placeholder="0.00" value="${esc(w.mVolvio)}" autocomplete="off"></div></label>
+      ${err('volvio')}
+      <button class="btn block" data-act="no-sobro">✋ No sobró nada</button>
+      <p class="field-title">Marquen si pasó algo de esto hoy:</p>
+      ${marca('agoto', w.mAgoto, '🔚', 'Se acabó todo antes de cerrar')}
+      ${marca('lluvia', w.mLluvia, '🌧️', 'Llovió')}
+      ${marca('evento', w.mEvento, '🎪', 'Hubo feria o evento cerca')}
+      <button class="btn primary xl mt" data-act="wiz-sig">Siguiente →</button>
+      ${teniaMerc ? '' : '<button class="btn xl block mt" data-act="saltar-merc">Saltar por hoy</button>'}`;
   } else {
     const c = calcWiz();
     body = `<div class="card resultado">${resultado(c)}</div>
@@ -290,6 +316,16 @@ function bindCierre() {
   });
   const nota = $('#w-nota');
   if (nota) nota.addEventListener('input', () => { w.nota = nota.value; });
+  const ml = $('#w-mll'), mv = $('#w-mvo');
+  if (ml && mv) {
+    // Enfocar el campo solo al llegar al paso, no cada vez que se marca «Llovió» (el teclado saltaría)
+    if (!w.mLlevada && pasoMercEnfocado !== w.step) setTimeout(() => ml.focus(), 80);
+    pasoMercEnfocado = w.step;
+    ml.addEventListener('input', () => { w.mLlevada = ml.value; });
+    mv.addEventListener('input', () => { w.mVolvio = mv.value; });
+    ml.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); mv.focus(); } });
+    mv.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); wizSiguiente(); } });
+  }
 }
 
 function wizSiguiente() {
@@ -304,7 +340,18 @@ function wizSiguiente() {
     if (isNaN(v) || v < 0) { toast('Revisen el monto de Yappy'); return; }
     w.yappy = String(v);
   }
-  w.step = Math.min(4, w.step + 1);
+  if (w.step === 4) {
+    const r = validarMerc(mercDelWiz(w));
+    if (!r.ok) {
+      w.mError = { campo: r.campo, error: r.error };
+      render();
+      const el = $(r.campo === 'llevada' ? '#w-mll' : '#w-mvo');
+      if (el) el.focus();
+      return;
+    }
+    w.mError = null;
+  }
+  w.step = Math.min(5, w.step + 1);
   w.otra = false;
   render();
   window.scrollTo({ top: 0 });
@@ -313,10 +360,12 @@ function wizSiguiente() {
 function guardarCierre() {
   const w = state.wiz;
   const prev = db.dias[w.f];
+  const rm = validarMerc(mercDelWiz(w));
   db.dias[w.f] = {
     efectivo: r2(num(w.efectivo)), yappy: r2(num(w.yappy) || 0), nota: (w.nota || '').trim(),
     p: prev ? prev.p : paramsActuales(), guardado: new Date().toISOString(),
     ...(prev && prev.hist ? { hist: true } : {}),
+    ...(rm.ok && rm.merc ? { merc: rm.merc } : {}),
   };
   db.gastos = db.gastos.filter(g => !w.origIds.includes(g.id) && !(g.fecha === w.f && g.cat === 'taxi'));
   for (const g of w.salidas) db.gastos.push({ ...g, id: g.id || uid(), fecha: w.f, deCaja: true });
@@ -452,12 +501,13 @@ function guardarGasto() {
 /* ================= ¿CÓMO VAMOS? ================= */
 function vVamos() {
   const seg = `<h1 class="page">¿Cómo vamos?</h1>
-    <div class="seg big">
+    <div class="seg big tres">
       <button class="${state.vamosTab === 'mes' ? 'on' : ''}" data-vamos="mes">📊 El mes</button>
       <button class="${state.vamosTab === 'viene' ? 'on' : ''}" data-vamos="viene">🔮 Lo que viene</button>
+      <button class="${state.vamosTab === 'merc' ? 'on' : ''}" data-vamos="merc">🛒 Mercancía</button>
     </div>
     <button class="btn block informe-btn" data-goto="informe">📄 Enviar informe en PDF${destinatario() ? ` a ${esc(destinatario())}` : ''}</button>`;
-  return seg + (state.vamosTab === 'mes' ? vMes() : vViene());
+  return seg + (state.vamosTab === 'mes' ? vMes() : state.vamosTab === 'merc' ? vMerc() : vViene());
 }
 
 function vMes() {
@@ -574,7 +624,8 @@ function vViene() {
 
   html += `<div class="card"><h2>🛒 Plata para compras</h2>
     <div class="num-md">${money(so.inversion)}</div>
-    <p class="hint">Es lo que se ha separado para insumos y gas, menos lo que ya se compró.</p></div>`;
+    <p class="hint">Es lo que se ha separado para insumos y gas, menos lo que ya se compró.</p>
+    ${presupuestoHtml()}</div>`;
   return html;
 }
 
@@ -613,9 +664,10 @@ function vMas() {
       ${fila('📚', 'Cargar meses anteriores', 'Lo que tenían anotado a mano', 'data-goto="historial"')}
       ${fila('⚙️', 'Configuración del negocio', 'Caja, porcentajes, pagos del mes', 'data-goto="config"')}
       ${state.installEvt ? fila('📲', 'Instalar en el teléfono', 'Para abrirla desde la pantalla de inicio', 'data-act="instalar"') : ''}
+      ${fila('🔄', 'Buscar actualización', 'Cuando les avisen que hay cambios nuevos', 'data-act="buscar-act"')}
       ${fila('❓', 'Cómo se usa', 'Repaso rápido de la app', 'data-goto="guia"')}
     </div>
-    <p class="hint center mt">Anny · Caja y cuentas · v2.1<br>Los datos están guardados en este teléfono.</p>`;
+    <p class="hint center mt">Anny · Caja y cuentas · <b>v2.2</b><br>Los datos están guardados en este teléfono.</p>`;
 }
 
 function vConfig() {
@@ -777,6 +829,101 @@ function agregarGasHist() {
   guardar(); toast('Cambio de gas anotado 🔥'); render();
 }
 
+/* ================= MERCANCÍA ================= */
+/* Día para el que están decidiendo qué mercancía llevar: hoy si todavía no cerraron; si no, el próximo día de trabajo */
+function diaDeCompra() {
+  const t = hoy();
+  let d = esLaborable(t) && !db.dias[t] ? t : addDays(t, 1);
+  for (let k = 0; k < 7 && !esLaborable(d); k++) d = addDays(d, 1);
+  return d;
+}
+const losDias = dow => { const n = DOW_LARGO[dow]; return /s$/.test(n) ? n : n + 's'; };
+
+function tarjetaMerc() {
+  if (!fechasCerradas().length) return '';
+  const d = diaDeCompra(), dow = parse(d).getDay(), s = sugerenciaDia(dow), dias = losDias(dow);
+  if (!s.listo) {
+    return `<div class="card merc"><div class="lbl">🛒 Mercancía para ${cuando(d)}</div>
+      <p><b>Estamos aprendiendo cuánta llevar.</b> Anoten cada noche, al cerrar el día, cuánta mercancía llevaron y cuánta volvió. Van ${s.tengo} de ${MERC_MIN_DIAS} ${dias} anotados.</p>
+      <div class="bar" role="img" aria-label="${s.tengo} de ${MERC_MIN_DIAS} días anotados"><i style="width:${Math.round(100 * s.tengo / MERC_MIN_DIAS)}%"></i></div></div>`;
+  }
+  const dif = s.monto - s.llevaHoy, tol = 0.05 * s.llevaHoy;
+  const consejo = dif <= -tol ? `Normalmente llevan ${money(s.llevaHoy)}: pueden llevar un poco menos.`
+    : dif >= tol ? `Normalmente llevan ${money(s.llevaHoy)}${s.colchon === 20 ? ' y se les acaba seguido' : ''}: conviene llevar un poco más.`
+    : `Lo que llevan normalmente (${money(s.llevaHoy)}) está bien.`;
+  return `<div class="card merc"><div class="lbl">🛒 Mercancía para ${cuando(d)}</div><div class="num-md">Lleven unos ${money(s.monto)}</div><p>${consejo}</p>
+    <p>Los ${dias} sobra ${s.pctSobra}&nbsp;% ${peq(money(s.volvioProm))}.</p></div>`;
+}
+
+/* Lo que van a necesitar para comprar en los próximos días de trabajo (dentro de la tarjeta «Plata para compras») */
+function presupuestoHtml() {
+  const pr = presupuestoSemana(diaDeCompra());
+  if (!pr.listo) return `<p class="hint mt">Cuando tengan unas 3 semanas de mercancía anotada, aquí verán cuánto comprar para la semana.</p>`;
+  return `<p class="mt">Para los próximos ${plural(pr.dias, 'día')} de trabajo necesitan unos <b>${money(pr.total)}</b> ${peq(`mercancía ${money(pr.mercancia)}${pr.gas ? ` + gas ${money(pr.gas)}` : ''}`)}.</p>`
+    + (pr.alcanza ? aviso('ok', '✅', `Alcanza: sobrarían <b>${money(pr.diferencia)}</b>.`) : aviso('warn', '⚠️', `No alcanza: faltarían <b>${money(-pr.diferencia)}</b>.`));
+}
+
+const NOMBRE_FACTOR = { lluvia: '🌧️ Cuando llueve', evento: '🎪 Con feria o evento', pago: '💵 Cerca de la quincena' };
+const peq = t => `<span class="small muted">(${t})</span>`;   // el dinero de un porcentaje, en letra pequeña
+
+function vMerc() {
+  const t = hoy(), ym = t.slice(0, 7);
+  if (!diasConMerc().length) {
+    return `<div class="card empty">🛒 Todavía no hay días anotados. Desde esta noche, al <b>cerrar el día</b>, anoten cuánta mercancía llevaron y cuánta volvió. Con unas 3 semanas anotadas, la app les dirá qué días llevar más o menos.</div>`;
+  }
+  const r = resumenMerc(`${ym}-01`, finDeMes(ym));
+  const im = informeMerc(ym);
+  let html = `<div class="card hero-mes">
+      <div class="lbl">Lo que volvió a casa en ${MESES[+ym.slice(5) - 1]}</div>
+      <div class="num">${money(r.volvio)}</div>
+      <div class="sub">${r.dias ? `${r.pctSobra}&nbsp;% de lo llevado (${money(r.llevada)}) · ${money(r.volvio / r.dias)} al día · ${plural(r.dias, 'día')} anotados` : 'Este mes todavía no hay días anotados.'}</div>
+      ${im && im.anterior ? `<div class="sub">${MESES[+mesAnt(ym).slice(5) - 1].replace(/^./, m => m.toUpperCase())}: ${im.anterior.pctSobra}&nbsp;% (${money(im.anterior.volvioDia)} al día)</div>` : ''}
+      <p class="hint">Es plata que ya gastaron en mercancía y no entró, aunque después la aprovechen en la casa.</p>
+    </div>`;
+
+  const orden = [1, 2, 3, 4, 5, 6, 0].filter(d => S().diasTrabajo.includes(d));
+  html += `<div class="card"><h2>📅 Cuánto llevar cada día</h2><div class="pagos">${orden.map(dow => {
+    const s = sugerenciaDia(dow);
+    const nombre = DOW_LARGO[dow].replace(/^./, m => m.toUpperCase());
+    if (!s.listo) return `<div class="pago"><span class="ic">🌱</span><div class="grow"><b>${nombre}</b><br><span class="small muted">Van ${s.tengo} de ${MERC_MIN_DIAS} días anotados</span></div><span class="pill warn">Faltan ${s.faltan}</span></div>`;
+    return `<div class="pago"><span class="ic">🛒</span><div class="grow"><b>${nombre}</b><br><span class="small muted">Llevan ${money(s.llevaHoy)} · sobra ${s.pctSobra}&nbsp;% (${money(s.volvioProm)})${s.colchon === 20 ? ' · se acaba seguido' : ''}</span></div><span class="pill ok">Llevar ${money(s.monto)}</span></div>`;
+  }).join('')}</div>
+    <p class="hint">Cuando hay ${MERC_MIN_DIAS} días anotados de un mismo día de la semana, la app sugiere cuánto llevar: lo que realmente se usó más un poco de colchón.</p></div>`;
+
+  const rd = rendimientoMerc(), bi = balanceInversion();
+  if (rd) html += `<div class="card"><h2>📈 Lo que rinde</h2><p>Por cada <b>$1</b> de mercancía que usan, venden <b>${money(rd.porDolar)}</b>.</p><p class="hint">Sirve para revisar si los precios están bien.</p></div>`;
+  html += `<div class="card"><h2>💰 ¿Alcanza lo que apartan?</h2>` + (bi.listo
+    ? `<p class="num-md">Gastan ${bi.pctReal}&nbsp;% · apartan ${bi.pctApartado}&nbsp;%</p>
+      <p class="small muted">Mercancía ${money(bi.usadaDia)} + gas ${money(bi.gasDia)} al día${bi.sinGas ? ' · el gas no está contado todavía' : ''}</p>
+      ${bi.difDia >= 0 ? aviso('ok', '✅', `Les sobra <b>${money(bi.difDia)}</b> al día, unos <b>${money(bi.difMes)}</b> al mes.`)
+        : aviso('warn', '⚠️', `Les falta <b>${money(-bi.difDia)}</b> al día, unos <b>${money(-bi.difMes)}</b> al mes.`)}
+      <p class="hint">Es solo un aviso: el porcentaje se cambia en Más → Configuración.</p>`
+    : `<p class="hint">Cuando tengan ${MERC_MIN_DIAS_BALANCE} días de mercancía anotados, aquí verán si lo que apartan para compras alcanza. Van ${bi.dias}.</p>
+      <div class="bar" role="img" aria-label="${bi.dias} de ${MERC_MIN_DIAS_BALANCE} días anotados"><i style="width:${Math.round(100 * bi.dias / MERC_MIN_DIAS_BALANCE)}%"></i></div>`) + `</div>`;
+
+  const ef = efectoFactores();
+  html += `<div class="card"><h2>🔎 ¿Qué cambia?</h2>${ef.length ? ef.map(e => {
+    const v = e.difVenta === 0 ? 'Ventas iguales' : `Venden ${Math.abs(e.difVenta)}&nbsp;% ${e.difVenta > 0 ? 'más' : 'menos'} ${peq(money(Math.abs(e.difVentaDia)) + ' al día')}`;
+    return `<p class="efecto"><b>${NOMBRE_FACTOR[e.clave]}</b><br>${v}<br>Sobra ${e.sobraCon}&nbsp;% ${peq(money(e.sobraConDia))} · otros días ${e.sobraSin}&nbsp;% ${peq(money(e.sobraSinDia))}</p>`;
+  }).join('') : '<p class="hint">Con unos días más anotados, aquí verán cómo cambian las ventas y lo que sobra cuando llueve, hay feria o es quincena.</p>'}</div>`;
+  return html;
+}
+
+/* Buscar una versión nueva de la app (Más → Buscar actualización) */
+async function buscarActualizacion() {
+  if (!('serviceWorker' in navigator)) return toast('Este teléfono no permite actualizar desde aquí');
+  if (!navigator.onLine) return toast('Necesitan internet para buscar la actualización');
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return location.reload();
+    toast('Buscando… un momento');
+    await reg.update();
+    if (reg.installing || reg.waiting) return toast('Bajando la versión nueva. Les avisaremos en el Inicio.');
+    // La versión nueva puede activarse apenas termina la revisión: esperar un momento antes de decir que no hay nada nuevo
+    setTimeout(() => { if (!state.hayNueva) toast('Ya tienen la última versión ✓'); }, 1500);
+  } catch (e) { toast('No se pudo buscar. Prueben otra vez con internet.'); }
+}
+
 /* ================= Eventos ================= */
 document.addEventListener('click', e => {
   const b = e.target.closest('button, [data-ver-dia]');
@@ -797,6 +944,7 @@ document.addEventListener('click', e => {
   if (ds.otraCat) { state.wiz.otraCat = ds.otraCat; const m = $('#w-otra-monto') && $('#w-otra-monto').value; render(); if (m) $('#w-otra-monto').value = m; return; }
   if (ds.quitarSalida) { state.wiz.salidas.splice(+ds.quitarSalida, 1); return render(); }
   if (ds.dow !== undefined) return b.classList.toggle('on');
+  if (ds.merc) { const k = 'm' + ds.merc[0].toUpperCase() + ds.merc.slice(1); state.wiz[k] = !state.wiz[k]; return render(); }
   if (ds.delFijo) { b.closest('.fijo-row').remove(); return; }
   if (ds.delGasto) {
     const g = db.gastos.find(x => x.id === ds.delGasto);
@@ -809,6 +957,10 @@ document.addEventListener('click', e => {
     case 'salir-cierre': if (!wizConDatos() || confirm('¿Salir sin guardar el cierre?')) { state.wiz = null; state.pila = []; irA('inicio'); } return;
     case 'wiz-sig': return wizSiguiente();
     case 'sin-yappy': state.wiz.yappy = '0'; return wizSiguiente();
+    case 'no-sobro': state.wiz.mVolvio = '0'; state.wiz.mError = null; return render();
+    case 'saltar-merc': Object.assign(state.wiz, { mLlevada: '', mVolvio: '', mAgoto: false, mLluvia: false, mEvento: false, mError: null, step: 5 }); return render();
+    case 'recargar': return location.reload();
+    case 'buscar-act': return buscarActualizacion();
     case 'toggle-taxi': state.wiz.taxi = !state.wiz.taxi; return render();
     case 'otra-salida': state.wiz.otra = true; render(); setTimeout(() => $('#w-otra-monto') && $('#w-otra-monto').focus(), 50); return;
     case 'add-salida': {
@@ -886,6 +1038,14 @@ document.addEventListener('visibilitychange', () => {
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  /* Si ya había una versión y llega otra, avisar en el Inicio para que toquen «Actualizar» */
+  const habiaVersion = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!habiaVersion || state.hayNueva) return;
+    state.hayNueva = true;
+    if (state.view === 'inicio') render();
+    else toast('Hay una versión nueva. Vayan al Inicio y toquen «Actualizar».');
+  });
 }
 
 render();

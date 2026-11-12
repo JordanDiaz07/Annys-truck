@@ -266,7 +266,7 @@ summary::-webkit-details-marker { display: none; }
 .pill { display: inline-block; font-size: 13px; font-weight: 700; border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
 .pill.warn { background: var(--amber-bg); color: var(--amber); }
 .pill.bad { background: var(--red-bg); color: var(--red); }
-.pill.ok { background: var(--green-bg); color: var(--green); }
+.pill.ok { background: var(--green-bg); color: #1E6B3E; }
 
 /* ---------- Gastos ---------- */
 .opciones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
@@ -364,3 +364,12 @@ body.enfocado #toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
 .informe-intro { display: flex; gap: 14px; align-items: center; }
 .informe-intro .q-ic { font-size: 44px; margin: 0; }
 .informe-intro p { margin: 0; }
+
+/* ---------- Mercancía ---------- */
+.campo-error { color: var(--red); font-weight: 700; font-size: 16px; line-height: 1.4; margin: -8px 0 14px; }
+.field-title { font-weight: 700; font-size: 16px; margin: 20px 0 0; }
+.merc .lbl { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--brown-2); margin-bottom: 4px; }
+.merc p { margin-top: 6px; }
+.merc .bar { margin-top: 10px; }
+.efecto { font-size: 16px; line-height: 1.45; margin: 10px 0; }
+.seg.big.tres button { font-size: 16px; padding: 12px 2px; line-height: 1.25; }
